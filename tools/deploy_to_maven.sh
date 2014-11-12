@@ -74,7 +74,7 @@ if [[ $TRAVIS_PULL_REQUEST == "false" ]] ; then
 		# Deploy hadoop v1 to maven
 		echo "Generating poms for hadoop1"
 		./tools/generate_specific_pom.sh $CURRENT_FLINK_VERSION $CURRENT_FLINK_VERSION_HADOOP1 pom.hadoop1.xml
-		mvn -B -f pom.hadoop1.pom -Pdocs-and-source -DskipTests -Drat.ignoreErrors=true deploy --settings deploysettings.xml; 
+		mvn -B -f pom.hadoop1.xml -Pdocs-and-source -DskipTests -Drat.ignoreErrors=true deploy --settings deploysettings.xml; 
 	fi
 
 	if [[ $TRAVIS_JOB_NUMBER == *4 ]] && [[ $TRAVIS_PULL_REQUEST == "false" ]] && [[ $CURRENT_FLINK_VERSION == *SNAPSHOT* ]] ; then 
