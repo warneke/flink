@@ -21,12 +21,11 @@
 #Please ask @rmetzger (on GitHub) before changing anything here. It contains some magic.
 
 # Build Responsibilities
-# 1. Deploy to sonatype (old hadoop)
-# 2. Nothing
-# 3. Deploy to s3 (old hadoop)
-# 4. deploy to sonatype (yarn hadoop) (this build will also generate specific poms for yarn hadoop)
-# 5. Nothing (formerly: Deploy Javadocs.)
-# 6. deploy to s3 (yarn hadoop)
+# 1. Deploy snapshot (hadoop1)
+# 2. Deploy to s3  (hadoop1)
+# 3. Nothing (hadoop200alpha)
+# 4. deploy snapshot and s3 (hadoop2 - 2.2.0)
+# 5. Nothing (hadoop2 - 2.5.1)
 
 # Changes (since travis changed the id assignment)
 # switched 2. with 3.
@@ -103,21 +102,11 @@ if [[ $TRAVIS_PULL_REQUEST == "false" ]] ; then
 	# 	cd ..
 	# fi
 
-	#
-	# Deploy binaries to S3
-	# The TRAVIS_JOB_NUMBER here is kinda hacked. 
-	# Currently, there are Builds 1-6. Build 1 is deploying to maven sonatype
-	# Build 2 has no special meaning, it is the openjdk7, hadoop 1.2.1 build
-	# Build 5 is openjdk7, hadoop yarn (2.0.5-beta) build.
-	# Please be sure not to use Build 1 as it will always be the yarn build.
-	#
-
-
-	if [[ $TRAVIS_JOB_NUMBER == *3 ]] || [[ $TRAVIS_JOB_NUMBER == *6 ]] ; then
+	if [[ $TRAVIS_JOB_NUMBER == *2 ]] || [[ $TRAVIS_JOB_NUMBER == *4 ]] ; then
 		echo "Uploading build to amazon s3. Job Number: $TRAVIS_JOB_NUMBER"
 		HD="hadoop1"
-		# job nr 6 is YARN
-		if [[ $TRAVIS_JOB_NUMBER == *6 ]] ; then
+		# job nr 4 is YARN
+		if [[ $TRAVIS_JOB_NUMBER == *4 ]] ; then
 			# move to current dir
 			mkdir flink-$CURRENT_FLINK_VERSION
 			cp -r flink-dist/target/flink-*-bin/flink-yarn*/* flink-$CURRENT_FLINK_VERSION/
@@ -134,7 +123,6 @@ if [[ $TRAVIS_PULL_REQUEST == "false" ]] ; then
 		echo "doing a ls -lisah:"
 		ls -lisah
 	fi
-
 fi # pull request check
 
 
