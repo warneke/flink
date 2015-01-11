@@ -23,6 +23,7 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -70,6 +71,7 @@ import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.api.records.YarnClusterMetrics;
 import org.apache.hadoop.yarn.client.api.YarnClient;
 import org.apache.hadoop.yarn.client.api.YarnClientApplication;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.exceptions.YarnException;
 import org.apache.hadoop.yarn.util.Records;
 import scala.concurrent.duration.FiniteDuration;
@@ -138,7 +140,7 @@ public class Client {
 	private static final int MIN_JM_MEMORY = 128;
 	private static final int MIN_TM_MEMORY = 128;
 
-	private Configuration conf;
+	private final Configuration conf = new YarnConfiguration();
 	private YarnClient yarnClient;
 
 	private ActorSystem actorSystem;
@@ -158,12 +160,8 @@ public class Client {
 	 */
 	private int slots = -1;
 	
-	public void run(String[] args) throws Exception {
+	private int run(String[] args) throws Exception {
 
-		if(UserGroupInformation.isSecurityEnabled()) {
-			throw new RuntimeException("Flink YARN client does not have security support right now."
-					+ "File a bug, we will fix it asap");
-		}
 		//Utils.logFilesInCurrentDirectory(LOG);
 		//
 		//	Command Line Options
@@ -190,7 +188,7 @@ public class Client {
 		} catch(MissingOptionException moe) {
 			System.out.println(moe.getMessage());
 			printUsage();
-			System.exit(1);
+			return 1;
 		}
 
 		// Jar Path
@@ -209,7 +207,7 @@ public class Client {
 			LOG.info("Placing default configuration in current directory");
 			File outFile = generateDefaultConf(localJarPath);
 			LOG.info("File written to "+outFile.getAbsolutePath());
-			System.exit(0);
+			return 0;
 		}
 
 		// Conf Path
@@ -220,7 +218,7 @@ public class Client {
 			File confFile = new File(confDirPath+CONFIG_FILE_NAME);
 			if(!confFile.exists()) {
 				LOG.error("Unable to locate configuration file in "+confFile);
-				System.exit(1);
+				return 1;
 			}
 			confPath = new Path(confFile.getAbsolutePath());
 		} else {
@@ -244,7 +242,7 @@ public class Client {
 				if(candidates.length > 1) {
 					System.out.println("Multiple .yaml configuration files were found in the current directory\n"
 							+ "Please specify one explicitly");
-					System.exit(1);
+					return 1;
 				} else if(candidates.length == 1) {
 					confPath = new Path(candidates[0].toURI());
 				}
@@ -296,7 +294,7 @@ public class Client {
 		if(jmMemory < MIN_JM_MEMORY) {
 			System.out.println("The JobManager memory is below the minimum required memory amount "
 					+ "of "+MIN_JM_MEMORY+" MB");
-			System.exit(1);
+			return 1;
 		}
 		// Task Managers memory
 		int tmMemory = 1024;
@@ -306,7 +304,7 @@ public class Client {
 		if(tmMemory < MIN_TM_MEMORY) {
 			System.out.println("The TaskManager memory is below the minimum required memory amount "
 					+ "of "+MIN_TM_MEMORY+" MB");
-			System.exit(1);
+			return 1;
 		}
 
 		if(cmd.hasOption(SLOTS.getOpt())) {
@@ -334,8 +332,6 @@ public class Client {
 				(ConfigConstants.AKKA_ASK_TIMEOUT, ConfigConstants.DEFAULT_AKKA_ASK_TIMEOUT),
 				TimeUnit.SECONDS);
 
-		conf = Utils.initializeYarnConfiguration();
-
 		// intialize HDFS
 		LOG.info("Copy App Master jar from local filesystem and add to local environment");
 		// Copy the application master jar to the filesystem
@@ -357,13 +353,13 @@ public class Client {
 
 		// Query cluster for metrics
 		if(cmd.hasOption(QUERY.getOpt())) {
-			showClusterMetrics(yarnClient);
+			return showClusterMetrics(yarnClient);
 		}
 		if(!cmd.hasOption(CONTAINER.getOpt())) {
 			LOG.error("Missing required argument "+CONTAINER.getOpt());
 			printUsage();
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 
 		// TM Count
@@ -385,13 +381,13 @@ public class Client {
 			LOG.error("The cluster does not have the requested resources for the TaskManagers available!\n"
 					+ "Maximum Memory: "+maxRes.getMemory() +", Maximum Cores: "+tmCores);
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 		if(jmMemory > maxRes.getMemory() ) {
 			LOG.error("The cluster does not have the requested resources for the JobManager available!\n"
 					+ "Maximum Memory: "+maxRes.getMemory());
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 		int totalMemoryRequired = jmMemory + tmMemory * taskManagerCount;
 		ClusterResourceDescription freeClusterMem = getCurrentFreeClusterResources(yarnClient);
@@ -399,19 +395,19 @@ public class Client {
 			LOG.error("This YARN session requires "+totalMemoryRequired+"MB of memory in the cluster. "
 					+ "There are currently only "+freeClusterMem.totalFreeMemory+"MB available.");
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 		if( tmMemory > freeClusterMem.containerLimit) {
 			LOG.error("The requested amount of memory for the TaskManagers ("+tmMemory+"MB) is more than "
 					+ "the largest possible YARN container: "+freeClusterMem.containerLimit);
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 		if( jmMemory > freeClusterMem.containerLimit) {
 			LOG.error("The requested amount of memory for the JobManager ("+jmMemory+"MB) is more than "
 					+ "the largest possible YARN container: "+freeClusterMem.containerLimit);
 			yarnClient.stop();
-			System.exit(1);
+			return 1;
 		}
 
 		// respect custom JVM options in the YAML file
@@ -464,18 +460,18 @@ public class Client {
 
 
 		// setup security tokens (code from apache storm)
-		final Path[] paths = new Path[3 + shipFiles.size()];
+		final Path[] paths = new Path[2 + shipFiles.size()];
 		StringBuffer envShipFileList = new StringBuffer();
 		// upload ship files
 		for (int i = 0; i < shipFiles.size(); i++) {
 			File shipFile = shipFiles.get(i);
 			LocalResource shipResources = Records.newRecord(LocalResource.class);
 			Path shipLocalPath = new Path("file://" + shipFile.getAbsolutePath());
-			paths[3 + i] = Utils.setupLocalResource(conf, fs, appId.toString(),
+			paths[2 + i] = Utils.setupLocalResource(conf, fs, appId.toString(),
 					shipLocalPath, shipResources, fs.getHomeDirectory());
 			localResources.put(shipFile.getName(), shipResources);
 
-			envShipFileList.append(paths[3 + i]);
+			envShipFileList.append(paths[2 + i]);
 			if(i+1 < shipFiles.size()) {
 				envShipFileList.append(',');
 			}
@@ -557,7 +553,10 @@ public class Client {
 					+ "the full application log using this command:\n"
 					+ "\tyarn logs -applicationId "+appReport.getApplicationId()+"\n"
 					+ "(It sometimes takes a few seconds until the logs are aggregated)");
+			return 1;
 		}
+		
+		return 0;
 	}
 
 	private void stopSession() {
@@ -644,7 +643,7 @@ public class Client {
 		formatter.printHelp(" ", opt);
 	}
 
-	private void showClusterMetrics(YarnClient yarnClient)
+	private int showClusterMetrics(YarnClient yarnClient)
 			throws YarnException, IOException {
 		YarnClusterMetrics metrics = yarnClient.getYarnClusterMetrics();
 		System.out.println("NodeManagers in the Cluster " + metrics.getNumNodeManagers());
@@ -671,7 +670,7 @@ public class Client {
 			System.out.println("Queue: "+q.getQueueName()+", Current Capacity: "+q.getCurrentCapacity()+" Max Capacity: "+q.getMaximumCapacity()+" Applications: "+q.getApplications().size());
 		}
 		yarnClient.stop();
-		System.exit(0);
+		return 0;
 	}
 
 	private File generateDefaultConf(Path localJarPath) throws IOException,
@@ -706,8 +705,18 @@ public class Client {
 		return outFile;
 	}
 
-	public static void main(String[] args) throws Exception {
-		Client c = new Client();
-		c.run(args);
+	public static void main(final String[] args) throws Exception {
+		
+		final Client c = new Client();
+		UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
+		
+		// Switch to correct security context
+		System.exit(ugi.doAs(new PrivilegedExceptionAction<Integer>() {
+
+			@Override
+			public Integer run() throws Exception {	
+				return Integer.valueOf(c.run(args));
+			}
+		}));
 	}
 }
