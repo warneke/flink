@@ -24,9 +24,6 @@ import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Enumeration;
@@ -36,7 +33,6 @@ import java.util.jar.JarFile;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.GlobalConfiguration;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -49,7 +45,6 @@ import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
-import org.apache.hadoop.util.Shell;
 import org.apache.hadoop.util.StringInterner;
 import org.apache.hadoop.yarn.api.ApplicationConstants.Environment;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
@@ -115,69 +110,6 @@ public class Utils {
 	
 	public static void getFlinkConfiguration(String confDir) {
 		GlobalConfiguration.loadConfiguration(confDir);
-	}
-	
-	private static void addPathToConfig(Configuration conf, File path) {
-		// chain-in a new classloader
-		URL fileUrl = null;
-		try {
-			fileUrl = path.toURI().toURL();
-		} catch (MalformedURLException e) {
-			throw new RuntimeException("Erroneous config file path", e);
-		}
-		URL[] urls = {fileUrl};
-		ClassLoader cl = new URLClassLoader(urls, conf.getClassLoader());
-		conf.setClassLoader(cl);
-	}
-	
-	private static void setDefaultConfValues(Configuration conf) {
-		if(conf.get("fs.hdfs.impl",null) == null) {
-			conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
-		}
-		if(conf.get("fs.file.impl",null) == null) {
-			conf.set("fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem");
-		}
-	}
-	
-	public static Configuration initializeYarnConfiguration() {
-		Configuration conf = new YarnConfiguration();
-		String configuredHadoopConfig = GlobalConfiguration.getString(ConfigConstants.PATH_HADOOP_CONFIG, null);
-		if(configuredHadoopConfig != null) {
-			LOG.info("Using hadoop configuration path from " + ConfigConstants.PATH_HADOOP_CONFIG + " setting.");
-			addPathToConfig(conf, new File(configuredHadoopConfig));
-			setDefaultConfValues(conf);
-			return conf;
-		}
-		String[] envs = { "YARN_CONF_DIR", "HADOOP_CONF_DIR", "HADOOP_CONF_PATH" };
-		for(int i = 0; i < envs.length; ++i) {
-			String confPath = System.getenv(envs[i]);
-			if (confPath != null) {
-				LOG.info("Found "+envs[i]+", adding it to configuration");
-				addPathToConfig(conf, new File(confPath));
-				setDefaultConfValues(conf);
-				return conf;
-			}
-		}
-		LOG.info("Could not find HADOOP_CONF_PATH, using HADOOP_HOME.");
-		String hadoopHome = null;
-		try {
-			hadoopHome = Shell.getHadoopHome();
-		} catch (IOException e) {
-			LOG.error("Unable to get hadoop home. Please set HADOOP_HOME variable!", e);
-			System.exit(1);
-		}
-		File tryConf = new File(hadoopHome+"/etc/hadoop");
-		if(tryConf.exists()) {
-			LOG.info("Found configuration using hadoop home.");
-			addPathToConfig(conf, tryConf);
-		} else {
-			tryConf = new File(hadoopHome+"/conf");
-			if(tryConf.exists()) {
-				addPathToConfig(conf, tryConf);
-			}
-		}
-		setDefaultConfValues(conf);
-		return conf;
 	}
 	
 	public static void setupEnv(Configuration conf, Map<String, String> appMasterEnv) {

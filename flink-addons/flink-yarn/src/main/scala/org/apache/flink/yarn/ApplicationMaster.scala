@@ -20,7 +20,6 @@ package org.apache.flink.yarn
 
 import java.io.{PrintWriter, FileWriter, BufferedWriter}
 import java.security.PrivilegedAction
-
 import akka.actor._
 import org.apache.flink.client.CliFrontend
 import org.apache.flink.configuration.{GlobalConfiguration, ConfigConstants}
@@ -29,8 +28,8 @@ import org.apache.flink.yarn.Messages.StartYarnSession
 import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.yarn.api.ApplicationConstants.Environment
 import org.slf4j.LoggerFactory
-
 import scala.io.Source
+import org.apache.hadoop.yarn.conf.YarnConfiguration
 
 object ApplicationMaster{
   import scala.collection.JavaConversions._
@@ -57,7 +56,7 @@ object ApplicationMaster{
         var jobManager: ActorRef = ActorRef.noSender
 
         try {
-          val conf = Utils.initializeYarnConfiguration()
+          val conf = new YarnConfiguration()
 
           val env = System.getenv()
 
