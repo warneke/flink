@@ -29,28 +29,42 @@ if [ "$FLINK_IDENT_STRING" = "" ]; then
         FLINK_IDENT_STRING="$USER"
 fi
 
-JVM_ARGS="$JVM_ARGS -Xmx512m"
+# find the location of the yarn command
+if [ -n ${HADOOP_YARN_HOME+x} ]; then
+	if [ -f "$HADOOP_YARN_HOME/bin/yarn" ]; then
+		HADOOP_YARN_BIN=$HADOOP_YARN_HOME/bin/yarn
+	fi
+fi
+if [[ -z ${HADOOP_YARN_BIN+x} && -n ${HADOOP_HOME+x} ]]; then
+	if [ -f "$HADOOP_HOME/bin/yarn" ]; then
+		HADOOP_YARN_BIN=$HADOOP_HOME/bin/yarn
+	fi
+fi
+if [ -z ${HADOOP_YARN_BIN+x} ]; then
+	yarn_tmp=`which yarn`
+	if [ $? -eq 0 ]; then
+		HADOOP_YARN_BIN=$yarn_tmp
+	fi
+fi
+if [ -z ${HADOOP_YARN_BIN+x} ]; then
+	echo "Cannot find 'yarn' command. Please set HADOOP_YARN_HOME to point to your YARN installation or make sure the 'yarn' command is defined in your standard path." >&2
+	exit 1
+fi
 
-# auxilliary function to construct a lightweight classpath for the
-# Flink CLI client
-constructCLIClientClassPath() {
+FLINK_UBER_JAR=`find $FLINK_LIB_DIR -name *yarn-uberjar.jar`
+if [ "$FLINK_UBER_JAR" = "" ]; then
+	echo "Cannot locate the Flink uberjar on the library path $FLINK_LIB_DIR. Please check your Flink installation." >&2
+	exit 2
+fi
 
-	for jarfile in $FLINK_LIB_DIR/*.jar ; do
-		if [[ $CC_CLASSPATH = "" ]]; then
-			CC_CLASSPATH=$jarfile;
-		else
-			CC_CLASSPATH=$CC_CLASSPATH:$jarfile
-		fi
-	done
-	echo $CC_CLASSPATH
-}
-
-CC_CLASSPATH=`manglePathList $(constructCLIClientClassPath)`
-
-log=$FLINK_LOG_DIR/flink-$FLINK_IDENT_STRING-yarn-session-$HOSTNAME.log
-log_setting="-Dlog.file="$log" -Dlog4j.configuration=file:"$FLINK_CONF_DIR"/log4j-yarn-session.properties -Dlogback.configurationFile=file:"$FLINK_CONF_DIR"/logback-yarn.xml"
+YARN_LOG_DIR=$FLINK_LOG_DIR
+YARN_LOGFILE=$FLINK_LOG_DIR/flink-$FLINK_IDENT_STRING-yarn-session-$HOSTNAME.log
+YARN_CLIENT_OPTS="-Dlog.file="$YARN_LOGFILE" -Dlog4j.configuration=file:"$FLINK_CONF_DIR"/log4j-yarn-session.properties -Dlogback.configurationFile=file:"$FLINK_CONF_DIR"/logback-yarn.xml"
 
 export FLINK_CONF_DIR
+export YARN_CLIENT_OPTS
+export YARN_LOG_DIR
+export YARN_LOGFILE
 
-$JAVA_RUN $JVM_ARGS -classpath $CC_CLASSPATH:$HADOOP_CLASSPATH $log_setting org.apache.flink.yarn.Client -ship $bin/../ship/ -confDir $FLINK_CONF_DIR -j $FLINK_LIB_DIR/*yarn-uberjar.jar $*
+$HADOOP_YARN_BIN jar $FLINK_UBER_JAR org.apache.flink.yarn.Client -ship $bin/../ship/ -confDir $FLINK_CONF_DIR -j $FLINK_UBER_JAR $*
 
