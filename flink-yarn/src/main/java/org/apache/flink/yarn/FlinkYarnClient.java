@@ -293,10 +293,7 @@ public class FlinkYarnClient extends AbstractFlinkYarnClient {
 		UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
 
 		if (UserGroupInformation.isSecurityEnabled()) {
-			if (!ugi.hasKerberosCredentials()) {
-				throw new YarnDeploymentException("In secure mode. Please provide Kerberos credentials in order to authenticate. " +
-						"You may use kinit to authenticate and request a TGT from the Kerberos server.");
-			}
+			
 			return ugi.doAs(new PrivilegedExceptionAction<AbstractFlinkYarnCluster>() {
 				@Override
 				public AbstractFlinkYarnCluster run() throws Exception {
